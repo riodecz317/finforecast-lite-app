@@ -1,0 +1,46 @@
+{
+  "name": "finforecast-lite-desktop",
+  "version": "1.0.0",
+  "description": "FinForecast Lite — desktop app",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "sync": "node scripts/sync.js",
+    "start": "npm run sync && electron .",
+    "pack": "npm run sync && electron-builder --dir",
+    "build": "npm run sync && electron-builder",
+    "build:win": "npm run sync && electron-builder --win",
+    "build:mac": "npm run sync && electron-builder --mac",
+    "build:linux": "npm run sync && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.rickydelatorre.finforecastlite",
+    "productName": "FinForecast Lite",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "src/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.finance",
+      "icon": "src/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "category": "Finance",
+      "icon": "src/icon.png"
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.1.0",
+    "electron-builder": "^26.15.3"
+  }
+}

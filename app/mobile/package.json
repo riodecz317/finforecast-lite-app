@@ -1,0 +1,17 @@
+{
+  "name": "finforecast-lite-mobile",
+  "version": "1.0.0",
+  "description": "FinForecast Lite — Android & iOS app",
+  "private": true,
+  "scripts": {
+    "sync": "node scripts/sync.js && npx cap sync",
+    "open:android": "npm run sync && npx cap open android",
+    "open:ios": "npm run sync && npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/ios": "^8.5.0"
+  }
+}
