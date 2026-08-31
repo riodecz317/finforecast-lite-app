@@ -1,0 +1,55 @@
+name: iOS build
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "finforecast-lite.html"
+      - "app/mobile/**"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install mobile project dependencies
+        working-directory: app/mobile
+        run: npm ci
+
+      - name: Sync app content into the Capacitor project
+        working-directory: app/mobile
+        run: node scripts/sync.js && npx cap sync ios
+
+      - name: Install CocoaPods dependencies
+        working-directory: app/mobile/ios/App
+        run: pod install
+
+      # No Apple Developer account/signing certificate exists yet, so this
+      # builds for the iOS Simulator instead of a device — that needs no
+      # code signing at all, and is enough to prove the app compiles
+      # cleanly end to end. Swap this step for a signed `xcodebuild archive`
+      # + `-exportArchive` once an Apple Developer account and a
+      # distribution certificate/provisioning profile are available as
+      # repo secrets.
+      - name: Build for iOS Simulator (unsigned)
+        working-directory: app/mobile/ios/App
+        run: |
+          xcodebuild -workspace App.xcworkspace \
+            -scheme App \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finforecast-lite-ios-simulator-build
+          path: app/mobile/ios/App/build/Build/Products/Debug-iphonesimulator

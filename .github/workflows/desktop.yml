@@ -1,0 +1,46 @@
+name: Desktop build
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "finforecast-lite.html"
+      - "app/electron/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            script: build:win
+          - os: macos-latest
+            script: build:mac
+          - os: ubuntu-latest
+            script: build:linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install desktop project dependencies
+        working-directory: app/electron
+        run: npm ci
+
+      - name: Build installer
+        working-directory: app/electron
+        run: npm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finforecast-lite-desktop-${{ matrix.os }}
+          path: |
+            app/electron/dist/*.exe
+            app/electron/dist/*.dmg
+            app/electron/dist/*.AppImage
+          if-no-files-found: warn

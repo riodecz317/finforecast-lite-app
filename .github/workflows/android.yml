@@ -1,0 +1,51 @@
+name: Android build
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "finforecast-lite.html"
+      - "app/mobile/**"
+      - ".github/workflows/android.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install mobile project dependencies
+        working-directory: app/mobile
+        run: npm ci
+
+      - name: Sync app content into the Capacitor project
+        working-directory: app/mobile
+        run: node scripts/sync.js && npx cap sync android
+
+      - name: Make gradlew executable
+        working-directory: app/mobile/android
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        working-directory: app/mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: finforecast-lite-android-debug
+          path: app/mobile/android/app/build/outputs/apk/debug/*.apk
+
+      # A signed release AAB (needed for actual Play Store submission) is a
+      # later step — it requires a keystore + signing credentials stored as
+      # repo secrets, which only makes sense once a Play Console account and
+      # signing key exist. This workflow proves the app builds cleanly.
