@@ -17,6 +17,7 @@ app/electron/src/index.html
 app/mobile/node_modules/
 app/mobile/www/index.html
 app/mobile/android/build/
+app/release-assets/
 app/mobile/*.apk
 app/mobile/android/app/build/
 app/mobile/android/.gradle/
