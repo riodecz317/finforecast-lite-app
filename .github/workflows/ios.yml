@@ -27,9 +27,9 @@ jobs:
         working-directory: app/mobile
         run: node scripts/sync.js && npx cap sync ios
 
-      - name: Install CocoaPods dependencies
-        working-directory: app/mobile/ios/App
-        run: pod install
+      # Capacitor 8 resolves iOS plugin dependencies via Swift Package
+      # Manager, not CocoaPods — there's no Podfile to install; Xcode
+      # resolves the Package.swift dependencies as part of the build below.
 
       # No Apple Developer account/signing certificate exists yet, so this
       # builds for the iOS Simulator instead of a device — that needs no
@@ -41,7 +41,7 @@ jobs:
       - name: Build for iOS Simulator (unsigned)
         working-directory: app/mobile/ios/App
         run: |
-          xcodebuild -workspace App.xcworkspace \
+          xcodebuild -project App.xcodeproj \
             -scheme App \
             -sdk iphonesimulator \
             -configuration Debug \
