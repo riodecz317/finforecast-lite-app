@@ -536,6 +536,7 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
   <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
     <a class="btn btn-outline btn-sm" style="text-decoration:none" href="https://claude.ai/code/artifact/ef42df40-1e45-4359-9799-7af428948d03" target="_blank" rel="noopener">&#8599; Open The Ledger Read</a>
   </div>
+  <div id="fh-command-center"></div>
   <div class="card" style="margin-bottom:14px">
     <div class="card-title" style="cursor:pointer" onclick="toggleFhCard('nw')">
       <div class="card-title-left"><div class="pip" style="background:var(--accent)"></div>Net Worth<span id="fh-nw-total-compact" style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--text);margin-left:10px">&#8369;0</span></div>
@@ -4532,6 +4533,42 @@ function renderFinancialHealth(){
       const attrs = c.tab ? ` onclick="switchTab('${c.tab}')"` : '';
       return `<div${attrs} style="display:flex;gap:9px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border)${c.tab?';cursor:pointer':''}"><span style="flex-shrink:0;font-size:13px">${c.ok?'✅':'⚠️'}</span><span style="font-size:12px;color:var(--text2);line-height:1.5;flex:1">${c.text}</span>${c.tab?'<span style="color:var(--text3);font-size:13px;flex-shrink:0">&#8250;</span>':''}</div>`;
     }).join('');
+
+    // "What needs my attention" — a compact summary at the very top of the
+    // tab, built entirely from numbers already computed above (net worth,
+    // free cash, health score, risks, debt-payoff opportunity). No new
+    // agent call, no new data - just answering "where am I / what's wrong /
+    // what should I do" before the detail cards below make you go find it.
+    const cmdEl = document.getElementById('fh-command-center');
+    if (cmdEl){
+      const hist = state.netWorthHistory||[];
+      let nwDeltaHtml = '';
+      if (hist.length>=2){
+        const first = hist[0].netWorth, last = hist[hist.length-1].netWorth;
+        const pct = first!==0 ? ((last-first)/Math.abs(first))*100 : 0;
+        nwDeltaHtml = ` <span style="font-size:11px;font-weight:700;color:${pct>=0?'var(--accent)':'var(--red)'}">${pct>=0?'▲':'▼'} ${Math.abs(pct).toFixed(1)}% since ${fmtDate(hist[0].date)}</span>`;
+      }
+      const topRisks = risks.slice(0,3);
+      const topAction = (xm.debtPayoffOpportunities&&xm.debtPayoffOpportunities[0])
+        ? `Pay off "${xm.debtPayoffOpportunities[0].name}" (${fmt(xm.debtPayoffOpportunities[0].balance)}) from free cash — saves ~${fmt(xm.debtPayoffOpportunities[0].netAnnualSavings)}/year.`
+        : (topRisks[0] && topRisks[0].fix) ? topRisks[0].fix : null;
+      cmdEl.innerHTML = `<div class="card" style="margin-bottom:14px;border-left:3px solid var(--blue)">
+        <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">Financial Snapshot</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:${topRisks.length||topAction?'14px':'0'}">
+          <div><div style="font-size:10px;color:var(--text3)">Net Worth</div><div style="font-size:18px;font-weight:800;color:${netWorth>=0?'var(--text)':'var(--red)'}">${fmt(netWorth)}</div>${nwDeltaHtml}</div>
+          <div><div style="font-size:10px;color:var(--text3)">Available Cash</div><div style="font-size:18px;font-weight:800;color:var(--text)">${fmt(freeLiquidCash)}</div></div>
+          <div><div style="font-size:10px;color:var(--text3)">Financial Health</div><div style="font-size:18px;font-weight:800;color:var(--text)">${agentReview?agentReview.score+'/100':'—'}</div>${agentReview?`<div style="font-size:11px;color:var(--text3)">${agentReview.grade||''}</div>`:''}</div>
+        </div>` +
+        (topRisks.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:${topAction?'10px':'0'}">
+          <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">🔴 Needs attention (${risks.length})</div>` +
+          topRisks.map(r=>`<div style="font-size:11.5px;color:var(--text2);line-height:1.5;padding:2px 0">${r.sev==='red'?'🔴':'🟠'} ${r.text}</div>`).join('') +
+          `</div>` : '') +
+        (topAction ? `<div style="border-top:1px solid var(--border);padding-top:10px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:4px">💡 Recommended action</div>
+          <div style="font-size:11.5px;color:var(--text2);line-height:1.5">${topAction}</div>
+        </div>` : '') +
+      `</div>`;
+    }
   }catch(e){ console.error('renderFinancialHealth:', e); }
 }
 function switchTab(tab){
