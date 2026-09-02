@@ -568,7 +568,6 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
     </div>
   </div>
   <div class="metric-row">
-    <div class="metric blue"><div class="metric-label">Overall Score</div><div class="metric-value" id="fh-overall" style="font-family:'IBM Plex Mono',monospace">&#8212;</div><div class="metric-sub" id="fh-overall-sub">&#8212;</div></div>
     <div class="metric blue"><div class="metric-label">Emergency Buffer</div><div class="metric-value" id="fh-months" style="font-family:'IBM Plex Mono',monospace">&#8212;</div><div class="metric-sub">months of outflow covered</div></div>
     <div class="metric amber"><div class="metric-label">Debt Service Ratio</div><div class="metric-value" id="fh-dti" style="font-family:'IBM Plex Mono',monospace">&#8212;</div><div class="metric-sub">of monthly income</div></div>
     <div class="metric teal"><div class="metric-label">Savings Rate</div><div class="metric-value" id="fh-savings-rate" style="font-family:'IBM Plex Mono',monospace">&#8212;</div><div class="metric-sub" id="fh-savings-sub">&#8212;</div></div>
@@ -4264,10 +4263,6 @@ function renderFinancialHealth(){
     // human-in-the-loop review rather than instant browser-side arithmetic.
     // Recorded via Settings > Ledger Read Score whenever a fresh review runs.
     const agentReview = (state.settings && state.settings.agentReview) || null;
-    const overallTone = !agentReview ? 'blue' : agentReview.score>=75?'green':agentReview.score>=45?'amber':'red';
-    const overallEl = document.getElementById('fh-overall');
-    overallEl.textContent = agentReview ? agentReview.score+'/100' : '—';
-    const overallSubEl = document.getElementById('fh-overall-sub');
     // Named source, always — this app now has two independent live review
     // pipelines (Claude/relay and Gemini/Auto-Analyze) that can legitimately
     // disagree on the same underlying data, since financial-performance-
@@ -4275,16 +4270,20 @@ function renderFinancialHealth(){
     // reusing a cached one. Leaving the source unlabeled reads as "one true
     // score" when it's really "whichever pipeline last completed" — exactly
     // the kind of silent precedence this app is otherwise careful to avoid.
+    // This used to also drive a standalone "Overall Score" metric tile —
+    // removed because it restated the Snapshot card's Financial Health
+    // figure under a different label a few pixels away, the same kind of
+    // same-number-two-places confusion flagged before. This subtext (and
+    // the "View full report" link) now render inside the Snapshot tile
+    // instead — one score, one place.
     const SOURCE_LABELS = { manual:'manual entry', relay:'via Claude (relay)', 'auto-gemini':'via Gemini (auto)' };
-    overallSubEl.textContent = agentReview
+    const scoreSubtext = agentReview
       ? `${agentReview.grade ? agentReview.grade+' · ' : ''}${SOURCE_LABELS[agentReview.source] || 'Ledger Read'} · ${fmtDate(agentReview.asOf)}`
       : 'No agent review recorded — add one in Settings';
     const fullReport = state.settings && state.settings.lastAutoAnalysis;
-    if (fullReport && fullReport.agents && fullReport.agents.length){
-      overallSubEl.innerHTML += ' &middot; <span style="color:var(--blue);cursor:pointer;font-weight:600" onclick="event.stopPropagation();openLedgerReportModal()">View full report &#8250;</span>';
-    }
-    const overallMetricEl = overallEl.closest('.metric');
-    if (overallMetricEl){ overallMetricEl.classList.remove('green','blue','amber','red'); overallMetricEl.classList.add(overallTone); }
+    const viewReportLinkHtml = (fullReport && fullReport.agents && fullReport.agents.length)
+      ? ' &middot; <span style="color:var(--blue);cursor:pointer;font-weight:600" onclick="event.stopPropagation();openLedgerReportModal()">View full report &#8250;</span>'
+      : '';
 
     // "Overall Score" above is ONLY financial-performance-rating's number —
     // the other 4 agents' headline verdicts used to be invisible unless you
@@ -4535,7 +4534,7 @@ function renderFinancialHealth(){
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:${topRisks.length||topAction?'14px':'0'}">
           <div><div style="font-size:10px;color:var(--text3)">Net Worth</div><div style="font-size:18px;font-weight:800;color:${netWorth>=0?'var(--text)':'var(--red)'}">${fmt(netWorth)}</div>${nwDeltaHtml}</div>
           <div><div style="font-size:10px;color:var(--text3)">Available Cash</div><div style="font-size:18px;font-weight:800;color:var(--text)">${fmt(freeLiquidCash)}</div></div>
-          <div><div style="font-size:10px;color:var(--text3)">Financial Health</div><div style="font-size:18px;font-weight:800;color:var(--text)">${agentReview?agentReview.score+'/100':'—'}</div>${agentReview?`<div style="font-size:11px;color:var(--text3)">${agentReview.grade||''}</div>`:''}</div>
+          <div><div style="font-size:10px;color:var(--text3)">Financial Health</div><div style="font-size:18px;font-weight:800;color:var(--text)">${agentReview?agentReview.score+'/100':'—'}</div><div style="font-size:11px;color:var(--text3)">${scoreSubtext}${viewReportLinkHtml}</div></div>
         </div>` +
         (topRisks.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:${topAction?'10px':'0'}">
           <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">🔴 Needs attention (${risks.length})</div>` +
