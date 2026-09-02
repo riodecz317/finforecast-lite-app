@@ -720,6 +720,7 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
             <button class="btn btn-outline" onclick="saveRelayConfig()">&#128190; Save</button>
             <button class="btn btn-outline" onclick="triggerCloudLedgerRefresh()">&#128640; Refresh Ledger Read</button>
             <button class="btn btn-primary" onclick="checkCloudLedgerRead()">&#8635; Check now</button>
+            <button class="btn btn-outline" onclick="syncFromCloud()" title="Replace this device's data with the latest snapshot another device pushed via Refresh/Auto-Analyze">&#11015; Sync Data From Cloud</button>
           </div>
           <div class="setting-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px"><div><div class="setting-label">Auto-Analyze (beta, Gemini)</div><div class="setting-sub">Optional, separate from the backend above. Points at a finforecast-cloud-agents Worker deployment. Runs all 5 agents automatically via Gemini's free tier and updates this dashboard directly &mdash; no command to copy, no separate human step. Output quality/consistency has not been validated against the Claude-run reports above; treat it as a faster but less-checked read.</div></div></div>
           <div style="display:flex;gap:10px;padding:10px 0;flex-wrap:wrap">
@@ -3572,6 +3573,33 @@ function applyCloudLedgerRead(){
   closeModal('relay-diff');
   showToast('✓ Applied Ledger Read from relay');
   _relayDiffCandidate = null;
+}
+async function syncFromCloud(){
+  const relayUrl = (state.settings && state.settings.relayUrl || '').replace(/\/+$/,'');
+  if (!relayUrl){ showToast('⚠ Set a Backend URL first'); return; }
+  let token = '';
+  try{ token = localStorage.getItem('finforecast_relay_token') || ''; }catch(e){}
+  try{
+    const res = await fetch(relayUrl + '/report/snapshot/latest', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+    if (res.status === 404){ showToast('No cloud snapshot yet — Refresh Ledger Read or Auto-Analyze from another device first'); return; }
+    const body = await res.json();
+    if (!res.ok){ showToast('⚠ Sync failed: ' + (body.error || res.status)); return; }
+    if (!body.state || !Array.isArray(body.state.wallets)){ showToast('⚠ Cloud snapshot looks invalid'); return; }
+    // Cloud always wins here (by design, not a bug) - this device's local
+    // data is fully replaced, not merged. Local-only bearer tokens
+    // (finforecast_relay_token / finforecast_auto_analyze_token) live in
+    // localStorage, not state, so they survive this untouched.
+    state = body.state;
+    migrateState();
+    saveData();
+    renderWallets();
+    updateTopPill();
+    renderFinancialHealth();
+    renderSettings();
+    showToast('✓ Synced from cloud — data version ' + body.dataVersion);
+  }catch(e){
+    showToast('⚠ Could not reach relay: ' + e.message);
+  }
 }
 async function triggerAutoAnalyze(){
   const workerUrl = (state.settings && state.settings.autoAnalyzeUrl || '').replace(/\/+$/,'');
