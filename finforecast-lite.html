@@ -561,6 +561,7 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
         <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--text3);margin-top:5px;font-family:'IBM Plex Mono',monospace" id="fh-nw-comp-amounts"></div>
       </div>
       <div id="fh-nw-breakdown"></div>
+      <div id="fh-nw-extra" style="margin-top:4px"></div>
       <div id="fh-nw-trend" style="margin-top:12px"></div>
       <div id="fh-nw-note" class="tip" style="display:none"></div>
     </div>
@@ -705,6 +706,30 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
           </div>
           <div style="padding:0 0 10px"><div style="font-size:10.5px;color:var(--text3);margin-bottom:4px">Note (optional)</div><input type="text" id="settings-agent-note" placeholder="e.g. Ledger Read refresh, Financial Performance section" style="width:100%"></div>
           <button class="btn btn-outline" onclick="saveAgentReview()">&#128190; Save Ledger Read Score</button>
+        </div>
+      </div>
+      <div class="card" style="margin-bottom:14px">
+        <div class="card-title"><div class="card-title-left"><div class="pip" style="background:var(--teal)"></div>Cloud Ledger Read (beta, opt-in)</div></div>
+        <div class="settings-section">
+          <div class="setting-row"><div><div class="setting-label">finforecast-relay backend</div><div class="setting-sub">Optional. Points at your own free-tier finforecast-relay deployment. Nothing here makes a network request until you click one of the buttons below &mdash; no background polling, ever. "Refresh Ledger Read" sends your full real data export to that backend to start a new 5-agent review; "Check now" only reads back whatever review is already complete there.</div></div></div>
+          <div style="display:flex;gap:10px;padding:10px 0;flex-wrap:wrap">
+            <div style="flex:1;min-width:220px"><div style="font-size:10.5px;color:var(--text3);margin-bottom:4px">Backend URL</div><input type="text" id="settings-relay-url" placeholder="https://finforecast-relay.fly.dev" style="width:100%"></div>
+            <div style="flex:1;min-width:220px"><div style="font-size:10.5px;color:var(--text3);margin-bottom:4px">API token</div><input type="password" id="settings-relay-token" placeholder="Bearer token" style="width:100%"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-outline" onclick="saveRelayConfig()">&#128190; Save</button>
+            <button class="btn btn-outline" onclick="triggerCloudLedgerRefresh()">&#128640; Refresh Ledger Read</button>
+            <button class="btn btn-primary" onclick="checkCloudLedgerRead()">&#8635; Check now</button>
+          </div>
+          <div class="setting-row" style="margin-top:14px;border-top:1px solid var(--border);padding-top:14px"><div><div class="setting-label">Auto-Analyze (beta, Gemini)</div><div class="setting-sub">Optional, separate from the backend above. Points at a finforecast-cloud-agents Worker deployment. Runs all 5 agents automatically via Gemini's free tier and updates this dashboard directly &mdash; no command to copy, no separate human step. Output quality/consistency has not been validated against the Claude-run reports above; treat it as a faster but less-checked read.</div></div></div>
+          <div style="display:flex;gap:10px;padding:10px 0;flex-wrap:wrap">
+            <div style="flex:1;min-width:220px"><div style="font-size:10.5px;color:var(--text3);margin-bottom:4px">Worker URL</div><input type="text" id="settings-auto-analyze-url" placeholder="https://finforecast-cloud-agents.<you>.workers.dev" style="width:100%"></div>
+            <div style="flex:1;min-width:220px"><div style="font-size:10.5px;color:var(--text3);margin-bottom:4px">Worker token</div><input type="password" id="settings-auto-analyze-token" placeholder="Bearer token" style="width:100%"></div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-outline" onclick="saveAutoAnalyzeConfig()">&#128190; Save</button>
+            <button class="btn btn-primary" id="btn-auto-analyze" onclick="triggerAutoAnalyze()">&#9889; Auto-Analyze Now (beta)</button>
+          </div>
         </div>
       </div>
     </div>
@@ -953,6 +978,21 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
     <div id="reset-alloc-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px"></div>
     <div style="background:var(--amber-l);border-radius:var(--radius-sm);border-left:3px solid var(--amber);padding:10px 13px;font-size:11px;color:var(--amber);margin-bottom:18px">&#9888; Resetting removes the reserved funds &mdash; it doesn't delete the payment itself.</div>
     <div class="confirm-modal-footer"><button class="btn btn-outline" onclick="document.getElementById('reset-alloc-modal').classList.remove('open')">Close</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-relay-diff">
+  <div class="modal"><div class="modal-title">Cloud Ledger Read</div><button class="modal-close" onclick="closeModal('relay-diff')">&#10005;</button>
+    <div id="relay-diff-body" style="font-size:12px;line-height:1.7"></div>
+    <div class="modal-footer"><button class="btn btn-outline" onclick="closeModal('relay-diff')">Cancel</button><button class="btn btn-primary" id="relay-diff-apply" onclick="applyCloudLedgerRead()">Apply</button></div>
+  </div>
+</div>
+
+<div class="modal-bg" id="modal-relay-refresh">
+  <div class="modal"><div class="modal-title">Ledger Read Refresh Started</div><button class="modal-close" onclick="closeModal('relay-refresh')">&#10005;</button>
+    <div class="tip info">Your data export was sent to the relay. Run each command below in Claude Code (each one submits its own result to the relay automatically) &mdash; once all 5 are in, come back and click "Check now".</div>
+    <div id="relay-refresh-body" style="font-size:12px;line-height:1.7;margin-top:10px"></div>
+    <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal('relay-refresh')">Done</button></div>
   </div>
 </div>
 
@@ -1844,12 +1884,26 @@ function renderHistory() {
     empty.style.display = 'none';
     const typeColors = { payment: 'background:var(--blue-l);color:var(--blue)', expense: 'background:var(--red-l);color:var(--red)', income: 'background:var(--accent-l);color:var(--accent)', savings: 'background:var(--accent-l);color:var(--accent)', 'expense-manual': 'background:var(--red-l);color:var(--red)', withdrawal: 'background:var(--amber-l);color:var(--amber)', transfer: 'background:var(--blue-l);color:var(--blue)', adjustment: 'background:var(--bg4);color:var(--text2)' };
     const typeLabels = { payment: '📅 Termed', expense: '🔁 Recurring', income: '💵 Income', savings: '💰 Savings', 'expense-manual': '🧾 Expense', withdrawal: '− Withdrawal', transfer: '⇄ Transfer', adjustment: '± Correction' };
+    // Ledger intelligence overlay: flag a row's category as running hot this
+    // month vs. its own trailing 3-month average - real arithmetic off
+    // paymentHistory, not an invented severity score.
+    const _xm = computeFinancialMetrics();
     logBody.innerHTML = filtered.map(h => {
       const d = new Date(h.paidAt);
       const dateStr = d.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});
       const timeStr = d.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'});
       const wIcon = h.walletIcon || '', wName = h.walletName || '';
       const catLabel = (CAT_ICONS_ALL[h.category]||'📄') + ' ' + (h.category||'other').replace(/-/g,' ');
+      let catBadge = '';
+      if (monthKey(h.paidAt) === _xm.spending.currentMonthKey) {
+        const cat = h.category||'other';
+        const catAvg = _xm.spending.categoryTrailingAverage[cat];
+        const catThisMonth = _xm.spending.categoryTotalsThisMonth[cat];
+        if (catAvg > 0 && catThisMonth > catAvg*1.2) {
+          const overPct = Math.round((catThisMonth/catAvg - 1) * 100);
+          catBadge = `<div style="font-size:9px;color:var(--amber);margin-top:2px;font-weight:600">▲ ${cat.replace(/-/g,' ')} running ${overPct}% above its 3-mo avg this month</div>`;
+        }
+      }
       const wasDeducted = h.deducted === true || (h.deducted === undefined && !!h.walletId);
       const hasInterest = h.interest && h.interest > 0;
       let lateTag = '';
@@ -1873,7 +1927,7 @@ function renderHistory() {
         <td style="white-space:nowrap"><div style="font-size:12px;font-weight:500;color:var(--text)">${dateStr}${lateTag}</div><div style="font-size:10px;color:var(--text3);font-family:'IBM Plex Mono',monospace">${timeStr}</div>${h.dueDate ? '<div style="font-size:10px;color:var(--text3)">Due: ' + fmtDate(h.dueDate) + '</div>' : ''}</td>
         <td><div style="font-size:12.5px;font-weight:600;color:var(--text)">${h.name}</div>${hasInterest ? '<div style="font-size:10px;color:var(--red);margin-top:2px">+' + fmt(h.interest) + ' interest/penalty</div>' : ''}${dupTag}</td>
         <td><span class="ph-type-pill" style="${typeColors[h.type]||'background:var(--bg3);color:var(--text2)'}">${typeLabels[h.type]||h.type}</span></td>
-        <td style="font-size:11px;color:var(--text2)">${catLabel}</td>
+        <td style="font-size:11px;color:var(--text2)">${catLabel}${catBadge}</td>
         <td>${walletCell}</td>
         <td class="num" style="white-space:nowrap"><div style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--text)">${fmt(h.amount)}</div>${hasInterest ? '<div style="font-size:10px;color:var(--text3)">base: ' + fmt(h.baseAmount||h.amount-h.interest) + '</div>' : ''}</td>
         <td style="white-space:nowrap"><div style="display:flex;gap:4px;justify-content:flex-end">${actionBtns}</div></td>
@@ -3346,6 +3400,14 @@ function renderSettings(){
   if(arGradeEl) arGradeEl.value = ar ? (ar.grade||'') : '';
   if(arAsOfEl) arAsOfEl.value = ar ? (ar.asOf||'') : '';
   if(arNoteEl) arNoteEl.value = ar ? (ar.note||'') : '';
+  const relayUrlEl = document.getElementById('settings-relay-url');
+  if(relayUrlEl) relayUrlEl.value = (state.settings && state.settings.relayUrl) || '';
+  const relayTokenEl = document.getElementById('settings-relay-token');
+  if(relayTokenEl){ try{ relayTokenEl.value = localStorage.getItem('finforecast_relay_token') || ''; }catch(e){} }
+  const autoUrlEl = document.getElementById('settings-auto-analyze-url');
+  if(autoUrlEl) autoUrlEl.value = (state.settings && state.settings.autoAnalyzeUrl) || '';
+  const autoTokenEl = document.getElementById('settings-auto-analyze-token');
+  if(autoTokenEl){ try{ autoTokenEl.value = localStorage.getItem('finforecast_auto_analyze_token') || ''; }catch(e){} }
 }
 function saveDependents(value){
   if (!state.settings) state.settings = {};
@@ -3378,6 +3440,166 @@ function exportJSON(){
     const a = document.createElement('a'); a.href = url; a.download = 'finforecast-lite-backup-' + today() + '.json'; a.click(); URL.revokeObjectURL(url);
     showToast('✓ JSON backup downloaded');
   }catch(e){ showToast('Export failed'); }
+}
+function saveRelayConfig(){
+  if (!state.settings) state.settings = {};
+  // URL is harmless in exportJSON() backups (just a URL) so it lives in
+  // state. The token deliberately does NOT — exportJSON() dumps state
+  // verbatim, and a bearer secret has no business ending up in a shared
+  // backup file — so it lives only in its own localStorage key.
+  state.settings.relayUrl = document.getElementById('settings-relay-url').value.trim();
+  saveData();
+  try{ localStorage.setItem('finforecast_relay_token', document.getElementById('settings-relay-token').value.trim()); }catch(e){}
+  showToast('✓ Relay settings saved');
+}
+function saveAutoAnalyzeConfig(){
+  if (!state.settings) state.settings = {};
+  state.settings.autoAnalyzeUrl = document.getElementById('settings-auto-analyze-url').value.trim();
+  saveData();
+  try{ localStorage.setItem('finforecast_auto_analyze_token', document.getElementById('settings-auto-analyze-token').value.trim()); }catch(e){}
+  showToast('✓ Auto-Analyze settings saved');
+}
+async function triggerCloudLedgerRefresh(){
+  const relayUrl = (state.settings && state.settings.relayUrl || '').replace(/\/+$/,'');
+  if (!relayUrl){ showToast('⚠ Set a Backend URL first'); return; }
+  let token = '';
+  try{ token = localStorage.getItem('finforecast_relay_token') || ''; }catch(e){}
+  const appExport = { version:'lite-1.0', exportedAt: new Date().toISOString(), state };
+  let res, body;
+  try{
+    res = await fetch(relayUrl + '/report/refresh', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
+      body: JSON.stringify({ inputLabel: 'finforecast-lite in-app refresh — ' + today(), appExport, metrics: computeFinancialMetrics() })
+    });
+    body = await res.json();
+  }catch(e){ showToast('⚠ Could not reach relay backend: ' + e.message); return; }
+  if (!res.ok){ showToast('⚠ Refresh failed: ' + (body && body.error || res.status)); return; }
+
+  const esc = s => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  document.getElementById('relay-refresh-body').innerHTML =
+    '<div style="margin-bottom:10px"><strong>Report</strong> ' + esc(body.reportId) + ' &middot; as of ' + esc(body.asOf) + '</div>' +
+    (body.jobs||[]).map((job,i) =>
+      '<div style="margin-bottom:12px">' +
+        '<div style="font-weight:600;margin-bottom:4px">' + esc(job.agentName) + '</div>' +
+        '<div style="display:flex;gap:8px;align-items:center">' +
+          '<code id="relay-refresh-cmd-' + i + '" style="flex:1;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius-sm);padding:9px 11px;font-size:11px;display:block;overflow-x:auto;white-space:nowrap">' + esc(job.claudeCommand) + '</code>' +
+          '<button class="btn btn-outline btn-sm" onclick="copyRelayRefreshCommand(' + i + ')" style="flex-shrink:0">&#128203; Copy</button>' +
+        '</div>' +
+      '</div>'
+    ).join('');
+  document.getElementById('modal-relay-refresh').classList.add('open');
+  showToast('✓ Refresh started — 5 jobs queued');
+}
+function copyRelayRefreshCommand(i){
+  const txt = document.getElementById('relay-refresh-cmd-'+i).textContent;
+  if (navigator.clipboard?.writeText) { navigator.clipboard.writeText(txt).then(()=>showToast('✓ Command copied')).catch(()=>showToast('Could not copy — select the text manually')); }
+  else { showToast('Could not copy — select the text manually'); }
+}
+let _relayDiffCandidate = null;
+async function fetchCloudLedgerRead(){
+  const relayUrl = (state.settings && state.settings.relayUrl || '').replace(/\/+$/,'');
+  if (!relayUrl) throw new Error('Set a Backend URL first');
+  let token = '';
+  try{ token = localStorage.getItem('finforecast_relay_token') || ''; }catch(e){}
+  const res = await fetch(relayUrl + '/report/latest', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('Relay returned ' + res.status);
+  return res.json();
+}
+async function checkCloudLedgerRead(){
+  let incoming;
+  try{
+    incoming = await fetchCloudLedgerRead();
+  }catch(e){
+    showToast('⚠ Could not reach relay backend: ' + e.message);
+    return;
+  }
+  if (!incoming){
+    showToast('No completed Ledger Read report on the relay yet');
+    return;
+  }
+  _relayDiffCandidate = incoming;
+  const current = state.settings && state.settings.agentReview;
+  const check = shouldAdoptLedgerReadSnapshot(current, incoming);
+  const row = (label,cur,inc) => '<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0"><span style="color:var(--text3)">'+label+'</span><span>'+(cur==null||cur===''?'—':cur)+' &rarr; <strong>'+(inc==null||inc===''?'—':inc)+'</strong></span></div>';
+  document.getElementById('relay-diff-body').innerHTML =
+    row('Score', current&&current.score, incoming.score) +
+    row('Grade', current&&current.grade, incoming.grade) +
+    row('As of', current&&current.asOf, incoming.asOf) +
+    row('Note', current&&current.note, incoming.note) +
+    (check.shouldApply ? '' : '<div class="tip warn" style="margin-top:10px">'+check.reason+' — applying will still overwrite it.</div>');
+  document.getElementById('modal-relay-diff').classList.add('open');
+
+  // Best-effort trend delta against the previous completed report — this is
+  // just a two-point comparison the client computes itself, not a new
+  // trend-analysis service. Never blocks the modal above if it fails.
+  try {
+    const relayUrl = (state.settings && state.settings.relayUrl || '').replace(/\/+$/,'');
+    let token = ''; try{ token = localStorage.getItem('finforecast_relay_token') || ''; }catch(e){}
+    const histRes = await fetch(relayUrl + '/report/history?limit=2', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+    if (histRes.ok) {
+      const hist = await histRes.json();
+      const reports = (hist.reports||[]).filter(r => r.metrics && typeof r.metrics.netWorth === 'number');
+      if (reports.length >= 2) {
+        const [latest, prev] = reports;
+        const nwDelta = prev.metrics.netWorth !== 0 ? ((latest.metrics.netWorth - prev.metrics.netWorth) / Math.abs(prev.metrics.netWorth)) * 100 : null;
+        if (nwDelta != null) {
+          const deltaColor = nwDelta >= 0 ? 'var(--accent)' : 'var(--red)';
+          document.getElementById('relay-diff-body').innerHTML += `<div style="display:flex;justify-content:space-between;gap:12px;padding:4px 0"><span style="color:var(--text3)">Net worth vs last snapshot</span><span style="color:${deltaColor};font-weight:600">${nwDelta>=0?'+':''}${nwDelta.toFixed(1)}%</span></div>`;
+        }
+      }
+    }
+  } catch(e) { /* trend delta is best-effort - the score/grade diff above already rendered */ }
+}
+function applyCloudLedgerRead(){
+  if (!_relayDiffCandidate) { closeModal('relay-diff'); return; }
+  if (!state.settings) state.settings = {};
+  const snap = _relayDiffCandidate;
+  state.settings.agentReview = { score:snap.score, grade:snap.grade, asOf:snap.asOf, note:snap.note, source:'relay' };
+  saveData();
+  renderFinancialHealth();
+  renderSettings();
+  closeModal('relay-diff');
+  showToast('✓ Applied Ledger Read from relay');
+  _relayDiffCandidate = null;
+}
+async function triggerAutoAnalyze(){
+  const workerUrl = (state.settings && state.settings.autoAnalyzeUrl || '').replace(/\/+$/,'');
+  if (!workerUrl){ showToast('⚠ Set a Worker URL first'); return; }
+  let token = '';
+  try{ token = localStorage.getItem('finforecast_auto_analyze_token') || ''; }catch(e){}
+  const btn = document.getElementById('btn-auto-analyze');
+  const originalLabel = btn ? btn.textContent : '';
+  if (btn){ btn.disabled = true; btn.textContent = '⏳ Analyzing…'; }
+  const appExport = { version:'lite-1.0', exportedAt: new Date().toISOString(), state };
+  try{
+    const res = await fetch(workerUrl + '/auto-analyze', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, token ? { 'Authorization': 'Bearer ' + token } : {}),
+      body: JSON.stringify({ appExport, metrics: computeFinancialMetrics() })
+    });
+    const body = await res.json();
+    if (res.status === 207 || body.status === 'partial_failure'){
+      const failed = (body.failures||[]).map(f=>f.agentName).join(', ');
+      showToast('⚠ Partial result — ' + (body.failures||[]).length + ' agent(s) failed (' + failed + '). Report not applied.');
+      return;
+    }
+    if (!res.ok || !body.reportCompleted){
+      showToast('⚠ Auto-Analyze failed: ' + (body.error || res.status));
+      return;
+    }
+    if (!state.settings) state.settings = {};
+    state.settings.agentReview = { score: body.report.score, grade: body.report.grade, asOf: body.report.asOf, note: body.report.note, source: 'auto-gemini' };
+    saveData();
+    renderFinancialHealth();
+    renderSettings();
+    showToast('✓ Auto-Analyze complete — score ' + body.report.score + '/100');
+  }catch(e){
+    showToast('⚠ Could not reach Worker: ' + e.message);
+  }finally{
+    if (btn){ btn.disabled = false; btn.textContent = originalLabel; }
+  }
 }
 function importJSON(){
   const input = document.createElement('input'); input.type = 'file'; input.accept = '.json';
@@ -3582,6 +3804,75 @@ function fhSyncCardState(key){
   if (body) body.style.display = expanded ? '' : 'none';
   if (chevron) chevron.style.transform = expanded ? 'rotate(0deg)' : 'rotate(-90deg)';
 }
+// Deterministic financial metrics, kept in sync with finforecast-relay's
+// src/calc/metrics.js (same formulas, ported so the app's own dashboard
+// stays instant/local-first and the relay gets the same verified numbers
+// instead of re-deriving them). Reuses this file's existing helpers
+// (toMonthly, getTotalMonthlyIncome, getAllSpendEntries, monthKey,
+// HEALTH_NEED_CATS) rather than duplicating them — this does NOT replace
+// renderFinancialHealth()'s own inline calc (its risk-signal logic is
+// fused with those locals too deeply to safely extract in one pass); it's
+// an additive, independently-computed set of the metrics that weren't
+// exposed as raw numbers anywhere before.
+function computeFinancialMetrics(){
+  const wallets = state.wallets||[], payments = state.payments||[], expenses = state.expenses||[];
+  const goals = state.financialGoals||[], holdings = state.investHoldings||[], invAccounts = state.investAccounts||[];
+
+  const monthlyIncome = getTotalMonthlyIncome();
+  // A payment with a real balance but no logged monthly amount is a data
+  // gap, not a $0 obligation — see finforecast-relay/src/calc/metrics.js
+  // for why debtToIncome must degrade to null rather than silently read 0.
+  const debtServiceUnknownCount = payments.filter(p=>(p.balance||0)>0 && (p.monthly===null||p.monthly===undefined)).length;
+  const monthlyDebtService = payments.reduce((s,p)=>s+(p.monthly||0),0);
+  const totalDebtBalance = payments.reduce((s,p)=>s+(p.balance||0),0);
+  const monthlyOutflow = expenses.reduce((s,e)=>s+toMonthly(e),0) + monthlyDebtService;
+  const liquidCash = wallets.reduce((s,w)=>s+(w.balance||0),0);
+  const earmarkedTotal = goals.filter(g=>g.status==='completed').reduce((s,g)=>s+(g.currentAmount||0),0);
+  const freeLiquidCash = Math.max(0, liquidCash-earmarkedTotal);
+  const monthlySavings = monthlyIncome - monthlyOutflow;
+  const savingsRate = monthlyIncome>0 ? monthlySavings/monthlyIncome : null;
+  const debtToIncome = (monthlyIncome>0 && debtServiceUnknownCount===0) ? monthlyDebtService/monthlyIncome : null;
+  const emergencyFundMonths = monthlyOutflow>0 ? freeLiquidCash/monthlyOutflow : null;
+  const liquidityRatio = monthlyDebtService>0 ? freeLiquidCash/monthlyDebtService : null;
+
+  const bySymbol = {};
+  holdings.forEach(h=>{ bySymbol[h.symbol] = (bySymbol[h.symbol]||0) + h.quantity*h.currentPrice; });
+  const investmentMarketValue = holdings.reduce((s,h)=>s+h.quantity*h.currentPrice,0);
+  const investmentCostBasis = holdings.reduce((s,h)=>s+h.quantity*(h.avgCost||0),0);
+  const investmentCash = invAccounts.reduce((s,a)=>s+(a.cashBalance||0),0);
+  const investmentReturnPct = investmentCostBasis>0 ? ((investmentMarketValue-investmentCostBasis)/investmentCostBasis)*100 : null;
+
+  const totalAssets = liquidCash + investmentCash + investmentMarketValue;
+  const totalLiabilities = totalDebtBalance;
+  const netWorth = totalAssets - totalLiabilities;
+
+  const activeGoals = goals.filter(g=>g.status!=='completed' && (g.targetAmount||0)>0);
+  const goalTargetTotal = activeGoals.reduce((s,g)=>s+g.targetAmount,0);
+  const goalCurrentTotal = activeGoals.reduce((s,g)=>s+(g.currentAmount||0),0);
+  const goalFundingRate = goalTargetTotal>0 ? goalCurrentTotal/goalTargetTotal : null;
+
+  const spendEntries = getAllSpendEntries();
+  const byMonth = {};
+  spendEntries.forEach(h=>{ const key=monthKey(h.paidAt), cat=h.category||'other'; if(!byMonth[key]) byMonth[key]={}; byMonth[key][cat]=(byMonth[key][cat]||0)+h.amount; });
+  const monthKeys = Object.keys(byMonth).sort();
+  const currentMonthKey = monthKeys[monthKeys.length-1] || monthKey(new Date().toISOString());
+  const trailingKeys = monthKeys.filter(k=>k!==currentMonthKey).slice(-3);
+  const categoryTotalsThisMonth = byMonth[currentMonthKey] || {};
+  const categoryTrailingAverage = {};
+  trailingKeys.forEach(k=>{ Object.entries(byMonth[k]||{}).forEach(([cat,amt])=>{ categoryTrailingAverage[cat]=(categoryTrailingAverage[cat]||0)+amt; }); });
+  Object.keys(categoryTrailingAverage).forEach(cat=>{ categoryTrailingAverage[cat] = categoryTrailingAverage[cat]/(trailingKeys.length||1); });
+
+  return {
+    monthlyIncome, monthlyDebtService, debtServiceUnknownCount, totalDebtBalance,
+    monthlyExpenses: monthlyOutflow, monthlyBurnRate: monthlyOutflow,
+    liquidCash, earmarkedTotal, freeLiquidCash, monthlySavings, savingsRate, debtToIncome,
+    emergencyFundMonths, liquidityRatio, netWorth, totalAssets, totalLiabilities,
+    investmentMarketValue, investmentCash, investmentCostBasis, investmentReturnPct,
+    goalFundingRate, goalTargetTotal, goalCurrentTotal,
+    spending: { currentMonthKey, categoryTotalsThisMonth, categoryTrailingAverage },
+  };
+}
+
 function renderFinancialHealth(){
   try{
     fhSyncCardState('nw');
@@ -3773,6 +4064,20 @@ function renderFinancialHealth(){
       nwRow('Investment account cash', invCash) +
       (holdings.length ? nwRow('Investment holdings (market value)', mv) : '') +
       nwRow('Debt balances (termed payments)', totalLiabilities, 'var(--red)', true);
+
+    // Additive deterministic readouts (computeFinancialMetrics) — plain
+    // numbers, not scored/banded like the dims above: inventing a 0-100
+    // threshold for these without a principled basis would be exactly the
+    // kind of fabricated precision this app is otherwise careful to avoid.
+    // nwRow formats its value as peso via fmt() - these aren't all peso
+    // amounts, so a small text-only variant instead of reusing it as-is.
+    const nwRowText = (label,text,color) => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="color:var(--text2)">${label}</span><span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:${color||'var(--text)'}">${text}</span></div>`;
+    const xm = computeFinancialMetrics();
+    document.getElementById('fh-nw-extra').innerHTML =
+      nwRow('Monthly burn rate (outflow)', xm.monthlyBurnRate) +
+      (xm.liquidityRatio!=null ? nwRowText('Liquidity ratio (months of debt service covered by free cash)', xm.liquidityRatio.toFixed(1)+' mo') : '') +
+      (xm.goalFundingRate!=null ? nwRowText('Goal funding rate (active goals)', (xm.goalFundingRate*100).toFixed(0)+'%') : '') +
+      (xm.investmentReturnPct!=null ? nwRowText('Investment return (unrealized, vs. cost basis)', (xm.investmentReturnPct>=0?'+':'')+xm.investmentReturnPct.toFixed(1)+'%', xm.investmentReturnPct>=0?'var(--accent)':'var(--red)') : '');
     const nwNote = document.getElementById('fh-nw-note');
     if (!payments.length){
       nwNote.style.display='block';
@@ -4049,14 +4354,26 @@ window.addEventListener('online',function(){}); window.addEventListener('offline
 // below. Settings > Ledger Read Score can still override it by hand; a
 // manual entry only gets replaced once a strictly newer snapshot lands here.
 const LEDGER_READ_SNAPSHOT = { score:66, grade:'C+', asOf:'2026-09-01', note:'Ledger Read refresh — added Behavioral & Psychological Spending Patterns section (4-agent review)' };
+// Shared freshness/precedence rule for adopting an incoming Ledger Read
+// snapshot (from the baked-in constant above, or from the relay backend's
+// GET /report/latest) over whatever's currently recorded: a strictly newer
+// asOf always wins; a same-or-newer asOf also wins as long as the current
+// value isn't a manual entry (manual entries only get replaced by something
+// strictly newer). Used by both syncLedgerReadSnapshot() below and the
+// relay "Check now" diff modal — do not duplicate this comparison.
+function shouldAdoptLedgerReadSnapshot(current, incoming){
+  if (!incoming || !incoming.asOf) return { shouldApply:false, reason:'no incoming snapshot' };
+  const isNewer = !current || incoming.asOf > current.asOf;
+  const isFreshAuto = current && current.source !== 'manual' && incoming.asOf >= current.asOf;
+  if (isNewer || isFreshAuto) return { shouldApply:true, reason:null };
+  return { shouldApply:false, reason: current.source==='manual' ? 'a newer/equal manual entry is already recorded' : 'a newer entry is already recorded' };
+}
 function syncLedgerReadSnapshot(){
   if (!state.settings) state.settings = {};
   const snap = LEDGER_READ_SNAPSHOT;
   if (!snap || !snap.asOf) return;
   const current = state.settings.agentReview;
-  const isNewer = !current || snap.asOf > current.asOf;
-  const isFreshAuto = current && current.source !== 'manual' && snap.asOf >= current.asOf;
-  if (isNewer || isFreshAuto){
+  if (shouldAdoptLedgerReadSnapshot(current, snap).shouldApply){
     state.settings.agentReview = { score:snap.score, grade:snap.grade, asOf:snap.asOf, note:snap.note, source:'auto' };
     saveData();
   }
