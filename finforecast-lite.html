@@ -4522,28 +4522,67 @@ function renderFinancialHealth(){
         const pct = first!==0 ? ((last-first)/Math.abs(first))*100 : 0;
         nwDeltaHtml = ` <span style="font-size:11px;font-weight:700;color:${pct>=0?'var(--accent)':'var(--red)'}">${pct>=0?'▲':'▼'} ${Math.abs(pct).toFixed(1)}% since ${fmtDate(hist[0].date)}</span>`;
       }
-      const topRisks = risks.slice(0,3);
       const topOpp = xm.debtPayoffOpportunities && xm.debtPayoffOpportunities[0];
-      const topAction = topOpp
-        ? `Pay off "${topOpp.name}" (${fmt(topOpp.balance)}) from free cash.<br>
-          <span style="color:var(--text3)">Interest cost if kept: ${fmt(topOpp.annualInterestCost)}/year (${topOpp.interestPct}%) · Interest given up on that cash: ${fmt(topOpp.annualForegoneInterest)}/year (${topOpp.walletApyPct.toFixed(2)}% wallet APY)</span><br>
-          <b>Net savings: ~${fmt(topOpp.netAnnualSavings)}/year</b>`
-        : (topRisks[0] && topRisks[0].fix) ? topRisks[0].fix : null;
+      // The debt-payoff opportunity and the "High-Interest Debt" risk signal
+      // are frequently the same underlying debt described two different
+      // ways (one mechanical, one advisory) — folding them into a single
+      // priority item here avoids restating the same card twice in one
+      // panel, the same trap the standalone card / duplicate score tile
+      // were removed for.
+      const dedupedRisks = risks.filter(r=>!(topOpp && r.name==='High-Interest Debt' && r.text.includes(topOpp.name)));
+      const priorityItems = [];
+      if (topOpp){
+        priorityItems.push({
+          sev:'red', title:'Eliminate high-interest debt',
+          detail:`${topOpp.name} · ${topOpp.interestPct}% p.a. · ${fmt(topOpp.balance)} balance`,
+          impact:`Est. annual interest: ${fmt(topOpp.annualInterestCost)} · Net savings if paid from free cash: ~${fmt(topOpp.netAnnualSavings)}/year`,
+          tab:'payments',
+        });
+      }
+      dedupedRisks.slice(0, Math.max(0,3-priorityItems.length)).forEach(r=>{
+        priorityItems.push({ sev:r.sev, title:r.name||'Risk signal', detail:r.text, impact:r.fix, tab:r.tab });
+      });
+      // "Why this score" — the biggest positive/negative contributor among
+      // the same 5 dimensions the Performance Scorecard shows in full below;
+      // this is a one-line pointer to that detail, not a restatement of it.
+      const scoredDims = dims.filter(d=>d.score!=null);
+      let whyScoreHtml = '';
+      if (scoredDims.length>=2){
+        const weakest = scoredDims.reduce((a,b)=>b.score<a.score?b:a);
+        const strongest = scoredDims.reduce((a,b)=>b.score>a.score?b:a);
+        whyScoreHtml = `<div style="font-size:10.5px;color:var(--text3);margin-top:3px">Primary drag: ${weakest.label} (${weakest.score}/100) · Strongest: ${strongest.label} (${strongest.score}/100)</div>`;
+      }
+      // AI confidence — only ever real numbers already recorded from a
+      // completed Auto-Analyze run (agents[].confidence); never a fabricated
+      // or guessed figure. No run on record just says so plainly.
+      let confidenceHtml;
+      if (fullReport && fullReport.agents && fullReport.agents.length){
+        const withConf = fullReport.agents.filter(a=>a.confidence!=null);
+        const avgConf = withConf.length ? withConf.reduce((s,a)=>s+a.confidence,0)/withConf.length : null;
+        const bucket = avgConf==null ? null : avgConf>=0.75?'High confidence':avgConf>=0.5?'Moderate confidence':'Low confidence';
+        confidenceHtml = `<div style="font-size:10.5px;color:var(--text3);margin-top:3px">${bucket?bucket+' · ':''}${fullReport.agents.length}/5 agents reviewed</div>`;
+      } else {
+        confidenceHtml = `<div style="font-size:10.5px;color:var(--text3);margin-top:3px">Confidence unavailable — no full agent review on record</div>`;
+      }
       cmdEl.innerHTML = `<div class="card" style="margin-bottom:14px;border-left:3px solid var(--blue)">
         <div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:10px">Financial Snapshot</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:${topRisks.length||topAction?'14px':'0'}">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:${priorityItems.length?'14px':'0'}">
           <div><div style="font-size:10px;color:var(--text3)">Net Worth</div><div style="font-size:18px;font-weight:800;color:${netWorth>=0?'var(--text)':'var(--red)'}">${fmt(netWorth)}</div>${nwDeltaHtml}</div>
           <div><div style="font-size:10px;color:var(--text3)">Available Cash</div><div style="font-size:18px;font-weight:800;color:var(--text)">${fmt(freeLiquidCash)}</div></div>
-          <div><div style="font-size:10px;color:var(--text3)">Financial Health</div><div style="font-size:18px;font-weight:800;color:var(--text)">${agentReview?agentReview.score+'/100':'—'}</div><div style="font-size:11px;color:var(--text3)">${scoreSubtext}${viewReportLinkHtml}</div></div>
+          <div><div style="font-size:10px;color:var(--text3)">Financial Health</div><div style="font-size:18px;font-weight:800;color:var(--text)">${agentReview?agentReview.score+'/100':'—'}</div><div style="font-size:11px;color:var(--text3)">${scoreSubtext}${viewReportLinkHtml}</div>${whyScoreHtml}${confidenceHtml}</div>
         </div>` +
-        (topRisks.length ? `<div style="border-top:1px solid var(--border);padding-top:10px;margin-bottom:${topAction?'10px':'0'}">
-          <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:6px">🔴 Needs attention (${risks.length})</div>` +
-          topRisks.map(r=>`<div style="font-size:11.5px;color:var(--text2);line-height:1.5;padding:2px 0">${r.sev==='red'?'🔴':'🟠'} ${r.text}</div>`).join('') +
+        (priorityItems.length ? `<div style="border-top:1px solid var(--border);padding-top:10px">
+          <div style="font-size:11px;font-weight:700;color:var(--red);margin-bottom:8px">🔴 Priority actions (${dedupedRisks.length + (topOpp?1:0)})</div>` +
+          priorityItems.map((it,i)=>`<div${it.tab?` onclick="switchTab('${it.tab}')"`:''} style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border)${it.tab?';cursor:pointer':''}">
+            <div style="flex-shrink:0;font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--text3);padding-top:1px">${String(i+1).padStart(2,'0')}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:700;color:var(--text)">${it.sev==='red'?'🔴':'🟠'} ${it.title}</div>
+              <div style="font-size:11.5px;color:var(--text2);line-height:1.5;margin-top:2px">${it.detail}</div>
+              ${it.impact?`<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-top:2px">${it.impact}</div>`:''}
+            </div>
+            ${it.tab?'<span style="color:var(--text3);font-size:13px;flex-shrink:0">&#8250;</span>':''}
+          </div>`).join('') +
           `</div>` : '') +
-        (topAction ? `<div style="border-top:1px solid var(--border);padding-top:10px">
-          <div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:4px">💡 Recommended action</div>
-          <div style="font-size:11.5px;color:var(--text2);line-height:1.5">${topAction}</div>
-        </div>` : '') +
       `</div>`;
     }
   }catch(e){ console.error('renderFinancialHealth:', e); }
