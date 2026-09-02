@@ -996,6 +996,15 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
   </div>
 </div>
 
+<div class="modal-bg" id="modal-ledger-report">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-title">Full Ledger Read Report</div>
+    <button class="modal-close" onclick="closeModal('ledger-report')">&#10005;</button>
+    <div id="ledger-report-body" style="margin-top:6px"></div>
+    <div class="modal-footer"><button class="btn btn-primary" onclick="closeModal('ledger-report')">Close</button></div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-ocr-import">
   <div class="modal"><div class="modal-title">Upload Statement</div><button class="modal-close" onclick="closeModal('ocr-import')">&#10005;</button>
     <div class="tip info">Pick a PDF, a photo of a statement, or an already-produced <code>.extracted.json</code>. Nothing here makes a network request &mdash; PDFs/photos need one extra step in Claude Code first (below), JSON imports instantly.</div>
@@ -3591,6 +3600,10 @@ async function triggerAutoAnalyze(){
     }
     if (!state.settings) state.settings = {};
     state.settings.agentReview = { score: body.report.score, grade: body.report.grade, asOf: body.report.asOf, note: body.report.note, source: 'auto-gemini' };
+    // The Worker throws away nothing — keep the full per-agent write-ups
+    // so "View full report" has real analysis behind the score, not just
+    // a bare number with nowhere to see how it was reached.
+    state.settings.lastAutoAnalysis = { completedAt: body.report.completedAt, agents: body.agents || [] };
     saveData();
     renderFinancialHealth();
     renderSettings();
@@ -3600,6 +3613,84 @@ async function triggerAutoAnalyze(){
   }finally{
     if (btn){ btn.disabled = false; btn.textContent = originalLabel; }
   }
+}
+// Minimal markdown→HTML for agent report display — not a full CommonMark
+// implementation, just enough for the actual shapes these agent prompts
+// produce: #/##/### headers, **bold**, `code`, tables, -/* and 1. lists,
+// --- rules, and blank-line-separated paragraphs. Inline-styled to match
+// this file's existing convention (no separate stylesheet classes).
+function mdToHtml(md){
+  if (!md) return '';
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`([^`]+)`/g,'<code style="background:var(--bg3);padding:1px 4px;border-radius:3px;font-family:\'IBM Plex Mono\',monospace;font-size:11px">$1</code>');
+  const lines = md.replace(/\r\n/g,'\n').split('\n');
+  let html = '', inList = null, inTable = false, tableHeader = null, tableRows = [], para = [];
+  const flushPara = () => { if (para.length){ html += `<p style="margin:0 0 10px;font-size:12.5px;line-height:1.65;color:var(--text2)">${inline(para.join(' '))}</p>`; para = []; } };
+  const flushList = () => { if (inList){ html += `</${inList}>`; inList = null; } };
+  const flushTable = () => {
+    if (inTable && tableHeader){
+      html += `<div style="overflow-x:auto;margin:8px 0 12px"><table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr>${tableHeader.map(h=>`<th style="text-align:left;padding:6px 8px;border-bottom:2px solid var(--border);color:var(--text);white-space:nowrap">${inline(h.trim())}</th>`).join('')}</tr></thead><tbody>${tableRows.map(r=>`<tr>${r.map(c=>`<td style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--border);color:var(--text2)">${inline(c.trim())}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;
+    }
+    inTable = false; tableHeader = null; tableRows = [];
+  };
+  for (const raw of lines){
+    const t = raw.trim();
+    if (/^\|.*\|$/.test(t)){
+      flushPara(); flushList();
+      const cells = t.slice(1,-1).split('|');
+      if (/^[\s|:-]+$/.test(t)) continue; // separator row
+      if (!inTable){ inTable = true; tableHeader = cells; } else { tableRows.push(cells); }
+      continue;
+    }
+    if (inTable) flushTable();
+    if (/^#{1,4}\s+/.test(t)){
+      flushPara(); flushList();
+      const level = t.match(/^#+/)[0].length;
+      const size = level<=1?15:level===2?13.5:12.5;
+      html += `<div style="font-weight:700;font-size:${size}px;margin:16px 0 6px;color:var(--text)">${inline(t.replace(/^#{1,4}\s+/,''))}</div>`;
+      continue;
+    }
+    if (/^[-*]\s+/.test(t)){
+      flushPara();
+      if (inList!=='ul'){ flushList(); html+='<ul style="margin:4px 0 10px 20px;padding:0;color:var(--text2);font-size:12.5px;line-height:1.65">'; inList='ul'; }
+      html += `<li>${inline(t.replace(/^[-*]\s+/,''))}</li>`;
+      continue;
+    }
+    if (/^\d+\.\s+/.test(t)){
+      flushPara();
+      if (inList!=='ol'){ flushList(); html+='<ol style="margin:4px 0 10px 20px;padding:0;color:var(--text2);font-size:12.5px;line-height:1.65">'; inList='ol'; }
+      html += `<li>${inline(t.replace(/^\d+\.\s+/,''))}</li>`;
+      continue;
+    }
+    if (t===''){ flushPara(); flushList(); continue; }
+    if (t==='---'){ flushPara(); flushList(); html += '<hr style="border:none;border-top:1px solid var(--border);margin:14px 0">'; continue; }
+    para.push(t);
+  }
+  flushPara(); flushList(); flushTable();
+  return html;
+}
+function openLedgerReportModal(){
+  const report = state.settings && state.settings.lastAutoAnalysis;
+  if (!report || !report.agents || !report.agents.length){ showToast('No full report on file yet — run Auto-Analyze first'); return; }
+  const AGENT_LABELS = {
+    'financial-performance-rating': '📊 Financial Performance Rating',
+    'money-risk-management': '⚠️ Money Risk Management',
+    'buffett-style-alignment': '💼 Buffett-Style Alignment',
+    'behavioral-spending-analyst': '🧠 Behavioral Spending Analysis',
+    'data-privacy-auditor': '🔒 Data Privacy Audit',
+  };
+  const body = report.agents.map(a => `
+    <div style="margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:6px">
+        <div style="font-size:14px;font-weight:700;color:var(--text)">${AGENT_LABELS[a.agentName] || a.agentName}</div>
+        ${a.confidence!=null ? `<span style="font-size:10.5px;font-family:'IBM Plex Mono',monospace;background:var(--bg3);color:var(--text2);padding:2px 8px;border-radius:10px">confidence ${(a.confidence*100).toFixed(0)}%</span>` : ''}
+      </div>
+      ${mdToHtml(a.markdown)}
+    </div>
+  `).join('');
+  document.getElementById('ledger-report-body').innerHTML = body
+    + `<div style="font-size:10.5px;color:var(--text3);text-align:center">Generated ${fmtDate(report.completedAt)} via Auto-Analyze (Gemini) — not yet cross-checked against the Claude-run agents.</div>`;
+  document.getElementById('modal-ledger-report').classList.add('open');
 }
 function importJSON(){
   const input = document.createElement('input'); input.type = 'file'; input.accept = '.json';
@@ -4099,9 +4190,14 @@ function renderFinancialHealth(){
     const overallTone = !agentReview ? 'blue' : agentReview.score>=75?'green':agentReview.score>=45?'amber':'red';
     const overallEl = document.getElementById('fh-overall');
     overallEl.textContent = agentReview ? agentReview.score+'/100' : '—';
-    document.getElementById('fh-overall-sub').textContent = agentReview
+    const overallSubEl = document.getElementById('fh-overall-sub');
+    overallSubEl.textContent = agentReview
       ? `${agentReview.grade ? agentReview.grade+' · ' : ''}as of ${fmtDate(agentReview.asOf)} — Ledger Read`
       : 'No agent review recorded — add one in Settings';
+    const fullReport = state.settings && state.settings.lastAutoAnalysis;
+    if (fullReport && fullReport.agents && fullReport.agents.length){
+      overallSubEl.innerHTML += ' &middot; <span style="color:var(--blue);cursor:pointer;font-weight:600" onclick="event.stopPropagation();openLedgerReportModal()">View full report &#8250;</span>';
+    }
     const overallMetricEl = overallEl.closest('.metric');
     if (overallMetricEl){ overallMetricEl.classList.remove('green','blue','amber','red'); overallMetricEl.classList.add(overallTone); }
 
