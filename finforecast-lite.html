@@ -572,6 +572,7 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
     <div class="metric amber"><div class="metric-label">Debt Service Ratio</div><div class="metric-value" id="fh-dti" style="font-family:'IBM Plex Mono',monospace">&#8212;</div><div class="metric-sub">of monthly income</div></div>
     <div class="metric teal"><div class="metric-label">Savings Rate</div><div class="metric-value" id="fh-savings-rate" style="font-family:'IBM Plex Mono',monospace">&#8212;</div><div class="metric-sub" id="fh-savings-sub">&#8212;</div></div>
   </div>
+  <div id="fh-debt-payoff" style="margin-bottom:14px"></div>
   <div id="fh-ledger-read-summary" style="margin-bottom:14px"></div>
   <div class="card" style="margin-bottom:14px">
     <div class="card-title"><div class="card-title-left"><div class="pip" style="background:var(--accent)"></div>Performance Scorecard</div><span style="font-size:11px;color:var(--text3)">Recomputed live from your wallets, income, debts, spending &amp; holdings</span></div>
@@ -4001,13 +4002,40 @@ function computeFinancialMetrics(){
   trailingKeys.forEach(k=>{ Object.entries(byMonth[k]||{}).forEach(([cat,amt])=>{ categoryTrailingAverage[cat]=(categoryTrailingAverage[cat]||0)+amt; }); });
   Object.keys(categoryTrailingAverage).forEach(cat=>{ categoryTrailingAverage[cat] = categoryTrailingAverage[cat]/(trailingKeys.length||1); });
 
+  // Debt payoff opportunity: for each debt payable in FULL from free
+  // liquid cash, compare its real annual interest cost against the real
+  // annual interest that cash would otherwise have earned — both numbers
+  // come straight from logged data (payments[].interest, wallets[].
+  // interestRatePct, balance-weighted), never an assumed/typical rate.
+  // Only surfaced when it's both affordable (balance <= freeLiquidCash)
+  // and net-beneficial (saves strictly more than it forgoes) — a debt
+  // that's cheaper to leave alone, or that free cash can't actually cover,
+  // is not "an opportunity," so it's silently excluded rather than shown
+  // with a caveat that undercuts the recommendation.
+  const walletApyWeightedPct = liquidCash>0
+    ? wallets.reduce((s,w)=>s+(w.balance||0)*(w.interestRatePct||0),0)/liquidCash
+    : 0;
+  const debtPayoffOpportunities = payments
+    .filter(p=>(p.balance||0)>0 && p.interest!=null && p.balance<=freeLiquidCash)
+    .map(p=>{
+      const annualInterestCost = p.balance*(p.interest/100);
+      const annualForegoneInterest = p.balance*(walletApyWeightedPct/100);
+      return {
+        paymentId:p.id, name:p.name, balance:p.balance, interestPct:p.interest,
+        walletApyPct:walletApyWeightedPct, annualInterestCost, annualForegoneInterest,
+        netAnnualSavings: annualInterestCost-annualForegoneInterest,
+      };
+    })
+    .filter(o=>o.netAnnualSavings>0)
+    .sort((a,b)=>b.netAnnualSavings-a.netAnnualSavings);
+
   return {
     monthlyIncome, monthlyDebtService, debtServiceUnknownCount, totalDebtBalance,
     monthlyExpenses: monthlyOutflow, monthlyBurnRate: monthlyOutflow,
     liquidCash, earmarkedTotal, freeLiquidCash, monthlySavings, savingsRate, debtToIncome,
     emergencyFundMonths, liquidityRatio, netWorth, totalAssets, totalLiabilities,
     investmentMarketValue, investmentCash, investmentCostBasis, investmentReturnPct,
-    goalFundingRate, goalTargetTotal, goalCurrentTotal,
+    goalFundingRate, goalTargetTotal, goalCurrentTotal, debtPayoffOpportunities,
     spending: { currentMonthKey, categoryTotalsThisMonth, categoryTrailingAverage },
   };
 }
@@ -4217,6 +4245,31 @@ function renderFinancialHealth(){
       (xm.liquidityRatio!=null ? nwRowText('Liquidity ratio (months of debt service covered by free cash)', xm.liquidityRatio.toFixed(1)+' mo') : '') +
       (xm.goalFundingRate!=null ? nwRowText('Goal funding rate (active goals)', (xm.goalFundingRate*100).toFixed(0)+'%') : '') +
       (xm.investmentReturnPct!=null ? nwRowText('Investment return (unrealized, vs. cost basis)', (xm.investmentReturnPct>=0?'+':'')+xm.investmentReturnPct.toFixed(1)+'%', xm.investmentReturnPct>=0?'var(--accent)':'var(--red)') : '');
+
+    // Debt payoff opportunity — the highest-conviction, purely mechanical
+    // recommendation this app can make without any LLM: a debt fully
+    // payable from free cash whose interest cost beats what that cash is
+    // actually earning, computed from real logged rates, arithmetic shown.
+    const payoffEl = document.getElementById('fh-debt-payoff');
+    if (payoffEl){
+      const opps = xm.debtPayoffOpportunities || [];
+      if (opps.length){
+        payoffEl.innerHTML = `<div class="card" style="border-left:3px solid var(--accent)">
+          <div class="card-title"><div class="card-title-left"><div class="pip" style="background:var(--accent)"></div>💰 Debt Payoff Opportunity</div></div>` +
+          opps.map(o => `<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Pay off "${o.name}" (${fmt(o.balance)}) from free cash now</div>
+            <div style="font-size:11.5px;color:var(--text2);line-height:1.6">
+              Interest cost if kept: ${fmt(o.balance)} &times; ${o.interestPct}% = <b>${fmt(o.annualInterestCost)}/yr</b><br>
+              Interest given up on that cash: ${fmt(o.balance)} &times; ${o.walletApyPct.toFixed(2)}% (balance-weighted wallet APY) = <b>${fmt(o.annualForegoneInterest)}/yr</b><br>
+              <span style="color:var(--accent);font-weight:700">Net savings: ~${fmt(o.netAnnualSavings)}/year</span>
+            </div>
+          </div>`).join('') +
+          `<div style="font-size:10px;color:var(--text3);padding-top:6px">Only shown when the balance is fully covered by free (non-goal-locked) liquid cash and the payoff is a strict net gain. Uses each wallet's own logged interest rate — not an assumed rate.</div>
+        </div>`;
+      } else {
+        payoffEl.innerHTML = '';
+      }
+    }
     const nwNote = document.getElementById('fh-nw-note');
     if (!payments.length){
       nwNote.style.display='block';
