@@ -698,7 +698,7 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
       <div class="card" style="margin-bottom:14px">
         <div class="card-title"><div class="card-title-left"><div class="pip" style="background:var(--blue)"></div>Ledger Read Score</div></div>
         <div class="settings-section">
-          <div class="setting-row"><div><div class="setting-label">Overall Score source</div><div class="setting-sub">Auto-synced from a snapshot Claude embeds in this file whenever it refreshes the Ledger Read — just reload the page to pick up a new score. Use the fields below only if you want to override it by hand; a manual entry sticks until a strictly newer refresh replaces it.</div></div></div>
+          <div class="setting-row"><div><div class="setting-label">Overall Score source</div><div class="setting-sub">Set automatically by whichever pipeline last completed a review — "Refresh Ledger Read" (Claude, via the relay) or "Auto-Analyze Now" (Gemini, via the Worker), both under Cloud Ledger Read below. The card next to the score always names which one and when. Use the fields below only if you want to override it by hand; a manual entry sticks until a strictly newer refresh replaces it.</div></div></div>
           <div style="display:flex;gap:10px;padding:10px 0;flex-wrap:wrap">
             <div><div style="font-size:10.5px;color:var(--text3);margin-bottom:4px">Score (0&ndash;100)</div><input type="number" id="settings-agent-score" min="0" max="100" step="1" style="width:80px;text-align:center"></div>
             <div><div style="font-size:10.5px;color:var(--text3);margin-bottom:4px">Grade</div><input type="text" id="settings-agent-grade" placeholder="C+" style="width:70px;text-align:center"></div>
@@ -4219,8 +4219,16 @@ function renderFinancialHealth(){
     const overallEl = document.getElementById('fh-overall');
     overallEl.textContent = agentReview ? agentReview.score+'/100' : '—';
     const overallSubEl = document.getElementById('fh-overall-sub');
+    // Named source, always — this app now has two independent live review
+    // pipelines (Claude/relay and Gemini/Auto-Analyze) that can legitimately
+    // disagree on the same underlying data, since financial-performance-
+    // rating explicitly re-derives its score fresh each run rather than
+    // reusing a cached one. Leaving the source unlabeled reads as "one true
+    // score" when it's really "whichever pipeline last completed" — exactly
+    // the kind of silent precedence this app is otherwise careful to avoid.
+    const SOURCE_LABELS = { manual:'manual entry', relay:'via Claude (relay)', 'auto-gemini':'via Gemini (auto)' };
     overallSubEl.textContent = agentReview
-      ? `${agentReview.grade ? agentReview.grade+' · ' : ''}as of ${fmtDate(agentReview.asOf)} — Ledger Read`
+      ? `${agentReview.grade ? agentReview.grade+' · ' : ''}${SOURCE_LABELS[agentReview.source] || 'Ledger Read'} · ${fmtDate(agentReview.asOf)}`
       : 'No agent review recorded — add one in Settings';
     const fullReport = state.settings && state.settings.lastAutoAnalysis;
     if (fullReport && fullReport.agents && fullReport.agents.length){
@@ -4473,18 +4481,23 @@ window.addEventListener('online',function(){}); window.addEventListener('offline
 // Baked-in snapshot of the last Ledger Read agent review. This app has no
 // live connection to the review agents, so instead of requiring manual
 // entry every time, Claude updates this constant directly in the file
-// whenever it refreshes the Ledger Read — reloading the page after that
-// then picks up the new score automatically via syncLedgerReadSnapshot()
-// below. Settings > Ledger Read Score can still override it by hand; a
-// manual entry only gets replaced once a strictly newer snapshot lands here.
-const LEDGER_READ_SNAPSHOT = { score:66, grade:'C+', asOf:'2026-09-01', note:'Ledger Read refresh — added Behavioral & Psychological Spending Patterns section (4-agent review)' };
+// Retired 2026-09-03: this used to be a hardcoded LEDGER_READ_SNAPSHOT
+// constant that a Claude Code session would hand-edit into this file after
+// a manual analysis run, auto-applied on every page load via
+// syncLedgerReadSnapshot(). Removed because it was a third, invisible
+// source of truth competing with the two real live pipelines below
+// (finforecast-relay/Claude and finforecast-cloud-agents/Gemini) - a user
+// had no way to know a hardcoded number in the source was what they were
+// looking at, which is exactly the kind of silent-precedence confusion
+// this app is otherwise careful to avoid (see the Overall Score comment
+// a few lines below on why dims are never silently averaged either).
+//
 // Shared freshness/precedence rule for adopting an incoming Ledger Read
-// snapshot (from the baked-in constant above, or from the relay backend's
-// GET /report/latest) over whatever's currently recorded: a strictly newer
-// asOf always wins; a same-or-newer asOf also wins as long as the current
-// value isn't a manual entry (manual entries only get replaced by something
-// strictly newer). Used by both syncLedgerReadSnapshot() below and the
-// relay "Check now" diff modal — do not duplicate this comparison.
+// snapshot (from the relay backend's GET /report/latest) over whatever's
+// currently recorded: a strictly newer asOf always wins; a same-or-newer
+// asOf also wins as long as the current value isn't a manual entry (manual
+// entries only get replaced by something strictly newer). Used by the
+// relay "Check now" diff modal.
 function shouldAdoptLedgerReadSnapshot(current, incoming){
   if (!incoming || !incoming.asOf) return { shouldApply:false, reason:'no incoming snapshot' };
   const isNewer = !current || incoming.asOf > current.asOf;
@@ -4492,21 +4505,10 @@ function shouldAdoptLedgerReadSnapshot(current, incoming){
   if (isNewer || isFreshAuto) return { shouldApply:true, reason:null };
   return { shouldApply:false, reason: current.source==='manual' ? 'a newer/equal manual entry is already recorded' : 'a newer entry is already recorded' };
 }
-function syncLedgerReadSnapshot(){
-  if (!state.settings) state.settings = {};
-  const snap = LEDGER_READ_SNAPSHOT;
-  if (!snap || !snap.asOf) return;
-  const current = state.settings.agentReview;
-  if (shouldAdoptLedgerReadSnapshot(current, snap).shouldApply){
-    state.settings.agentReview = { score:snap.score, grade:snap.grade, asOf:snap.asOf, note:snap.note, source:'auto' };
-    saveData();
-  }
-}
 function initApp(){
   try{
     loadData();
     migrateState();
-    syncLedgerReadSnapshot();
     seedDefaultData();
     renderWallets();
     updateTopPill();
