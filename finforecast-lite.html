@@ -572,6 +572,7 @@ textarea:focus{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-m)}
     <div class="metric amber"><div class="metric-label">Debt Service Ratio</div><div class="metric-value" id="fh-dti" style="font-family:'IBM Plex Mono',monospace">&#8212;</div><div class="metric-sub">of monthly income</div></div>
     <div class="metric teal"><div class="metric-label">Savings Rate</div><div class="metric-value" id="fh-savings-rate" style="font-family:'IBM Plex Mono',monospace">&#8212;</div><div class="metric-sub" id="fh-savings-sub">&#8212;</div></div>
   </div>
+  <div id="fh-ledger-read-summary" style="margin-bottom:14px"></div>
   <div class="card" style="margin-bottom:14px">
     <div class="card-title"><div class="card-title-left"><div class="pip" style="background:var(--accent)"></div>Performance Scorecard</div><span style="font-size:11px;color:var(--text3)">Recomputed live from your wallets, income, debts, spending &amp; holdings</span></div>
     <div id="fh-scorecard"></div>
@@ -3562,7 +3563,7 @@ async function checkCloudLedgerRead(){
     }
   } catch(e) { /* trend delta is best-effort - the score/grade diff above already rendered */ }
 }
-function applyCloudLedgerRead(){
+async function applyCloudLedgerRead(){
   if (!_relayDiffCandidate) { closeModal('relay-diff'); return; }
   if (!state.settings) state.settings = {};
   const snap = _relayDiffCandidate;
@@ -3573,6 +3574,25 @@ function applyCloudLedgerRead(){
   closeModal('relay-diff');
   showToast('✓ Applied Ledger Read from relay');
   _relayDiffCandidate = null;
+
+  // The Claude/relay path used to have no way to surface the 5 agents'
+  // full write-ups (only Auto-Analyze/Gemini did) - that inconsistency
+  // between the two pipelines was its own source of confusion. Best-effort:
+  // fetch the same lastAutoAnalysis shape either pipeline can now populate,
+  // so "View full report" and the summary strip work regardless of source.
+  if (snap.reportId){
+    try{
+      const relayUrl = (state.settings.relayUrl || '').replace(/\/+$/,'');
+      let token = ''; try{ token = localStorage.getItem('finforecast_relay_token') || ''; }catch(e){}
+      const res = await fetch(relayUrl + '/report/' + snap.reportId + '/jobs/full', { headers: token ? { 'Authorization': 'Bearer ' + token } : {} });
+      if (res.ok){
+        const body = await res.json();
+        state.settings.lastAutoAnalysis = { completedAt: snap.completedAt, agents: body.agents || [] };
+        saveData();
+        renderFinancialHealth();
+      }
+    }catch(e){ /* best-effort - the score/grade already applied above regardless */ }
+  }
 }
 async function syncFromCloud(){
   const relayUrl = (state.settings && state.settings.relayUrl || '').replace(/\/+$/,'');
@@ -4236,6 +4256,42 @@ function renderFinancialHealth(){
     }
     const overallMetricEl = overallEl.closest('.metric');
     if (overallMetricEl){ overallMetricEl.classList.remove('green','blue','amber','red'); overallMetricEl.classList.add(overallTone); }
+
+    // "Overall Score" above is ONLY financial-performance-rating's number —
+    // the other 4 agents' headline verdicts used to be invisible unless you
+    // opened the full report (and until today, that only ever worked for
+    // Gemini-produced reports). This strip is what the old static "Ledger
+    // Read" artifact showed as 4 summary cards, made live and pipeline-
+    // agnostic: same data, same shape, regardless of which review ran.
+    const summaryEl = document.getElementById('fh-ledger-read-summary');
+    if (summaryEl){
+      if (fullReport && fullReport.agents && fullReport.agents.length){
+        const AGENT_META = {
+          'financial-performance-rating': {label:'Financial Performance', icon:'📊'},
+          'money-risk-management': {label:'Money Risk', icon:'⚠️'},
+          'buffett-style-alignment': {label:'Buffett Alignment', icon:'💼'},
+          'behavioral-spending-analyst': {label:'Behavioral', icon:'🧠'},
+          'data-privacy-auditor': {label:'Privacy Audit', icon:'🔒'},
+        };
+        summaryEl.innerHTML = `<div style="font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px">Ledger Read — all 5 agents</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px">` +
+          fullReport.agents.map(a => {
+            const meta = AGENT_META[a.agentName] || {label:a.agentName, icon:'📄'};
+            // The one-liner is each agent's own last non-empty markdown line
+            // (its documented "fold into a combined review" summary) - real
+            // agent output, not a fabricated blurb, though occasionally an
+            // agent's actual last line is a boilerplate disclaimer rather
+            // than its intended summary; click through for the full text.
+            const oneLiner = (a.oneLineSummary || '').replace(/^\*\*[^*]+\*\*:?\s*/,'').slice(0,110);
+            return `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;cursor:pointer" onclick="openLedgerReportModal()">
+              <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px">${meta.icon} ${meta.label}</div>
+              <div style="font-size:10.5px;color:var(--text3);line-height:1.4">${oneLiner || 'See full report'}${a.confidence!=null ? ` <span style="color:var(--text4)">· ${(a.confidence*100).toFixed(0)}% conf.</span>` : ''}</div>
+            </div>`;
+          }).join('') + `</div>`;
+      } else {
+        summaryEl.innerHTML = '';
+      }
+    }
 
     document.getElementById('fh-months').textContent = monthsCoverage==null ? '—' : monthsCoverage.toFixed(1)+' mo';
     document.getElementById('fh-dti').textContent = monthlyIncome>0 ? (monthlyDebtService/monthlyIncome*100).toFixed(1)+'%' : '—';
